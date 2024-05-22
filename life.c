@@ -22,7 +22,7 @@ enum {
   SPEED1 = 2,
   SPEED2 = 8,
   STARTING_FRAMES = 30,
-  SETINGUP_FRAMES = 90,
+  SETINGUP_FRAMES = 30,
 };
 
 static uint32_t level_colors[] = {19,18,17,16,15,27,28,29,23,24,25,26};
@@ -172,6 +172,14 @@ void start_setup() {
             count++;
         }
     }
+    mark_frame = riv->frame;
+}
+
+void game_setingup() {
+    if (riv->frame - mark_frame > SETINGUP_FRAMES) {
+        mark_frame = riv->frame;
+        setup = true;
+    }
 }
 
 void start_game() {
@@ -187,13 +195,6 @@ void start_game() {
     riv_waveform(&start_waveform);
     starting = true;
     mark_frame = riv->frame;
-}
-
-void game_setingup() {
-    if (riv->frame - mark_frame > SETINGUP_FRAMES) {
-        mark_frame = riv->frame;
-        setup = true;
-    }
 }
 
 void game_starting() {
