@@ -23,9 +23,10 @@ enum {
   SPEED2 = 8,
   STARTING_FRAMES = 30,
   SETINGUP_FRAMES = 30,
-  N_POLIMINOS = 14,
+  N_POLIMINOS = 9,
   N_MIRRORS = 4,
   POLIMINOS_POINTS = 4,
+  START_SCREEN_CELLS = 150,
 };
 
 static uint32_t level_colors[] = {19,18,17,16,15,27,28,29,23,24,25,26};
@@ -40,21 +41,18 @@ riv_vec2i cursor_map_pos;
 // up to tetromino
 static int poliminos[N_POLIMINOS][POLIMINOS_POINTS][2] = {
     {{0,0},{0,1},{-1,-1},{-1,-1}}, // domino
-    {{0,0},{1,0},{-1,-1},{-1,-1}}, // domino b
     {{0,0},{0,1},{0,2},{-1,-1}}, // tromino 1
-    {{0,0},{1,0},{2,0},{-1,-1}}, // tromino 1b
     {{0,0},{0,1},{1,0},{-1,-1}}, // tromino 2
     {{0,0},{0,1},{0,2},{0,3}}, // tetromino 1
-    {{0,0},{1,0},{2,0},{3,0}}, // tetromino 1b
     {{0,0},{0,1},{1,0},{1,1}}, // tetromino 2
-    {{0,0},{0,1},{0,2},{1,2}}, // tetromino 3
+    {{0,0},{0,1},{0,2},{1,0}}, // tetromino 3
     {{0,0},{0,1},{1,0},{2,0}}, // tetromino 3b
-    {{0,0},{1,0},{1,1},{2,1}}, // tetromino 4
-    {{0,0},{0,1},{1,1},{1,2}}, // tetromino 4b
+    {{0,0},{0,1},{1,1},{1,2}}, // tetromino 4
     {{0,0},{0,1},{0,2},{1,1}}, // tetromino 5
-    {{0,0},{1,0},{2,0},{1,1}}, // tetromino 5b
 };
-static int mirrors[4][2] = {{1,1},{1,-1},{-1,-1},{-1,1}};
+// static int mirrors[4][2] = {{1,1},{1,-1},{-1,-1},{-1,1}};
+static int mirrors[N_MIRRORS][2] = {{1,1},{-1,1},{-1,-1},{1,-1}};
+static int rotations[N_MIRRORS] = {0,1,0,1}; // (reverse )
 
 int u_press = 0;
 int d_press = 0;
@@ -95,7 +93,7 @@ int starting_cells = 30;
 int setup_time = 60;
 bool show_stats = 1;
 float efficiency = 1.0;
-int updates_sec = 1;
+int updates_sec = 2;
 int bonus_remaining_time = 0;
 
 
@@ -134,13 +132,13 @@ riv_waveform_desc multiset_sfx = {
     .type = RIV_WAVEFORM_PULSE,
     .attack = 0.01f, .decay = 0.03f, .sustain = 0.3f, .release = 0.01f,
     .start_frequency = RIV_NOTE_A4, .end_frequency = RIV_NOTE_C4,
-    .amplitude = 0.25f, .sustain_level = 0.5f,
+    .amplitude = 0.15f, .sustain_level = 0.5f,
 };
 riv_waveform_desc multiunset_sfx = {
     .type = RIV_WAVEFORM_PULSE,
     .attack = 0.01f, .decay = 0.03f, .sustain = 0.3f, .release = 0.01f,
     .start_frequency = RIV_NOTE_C4, .end_frequency = RIV_NOTE_A4,
-    .amplitude = 0.25f, .sustain_level = 0.5f,
+    .amplitude = 0.15f, .sustain_level = 0.5f,
 };
 riv_waveform_desc ready_sfx = {
     .type = RIV_WAVEFORM_PULSE,
@@ -204,6 +202,21 @@ int adjacencies (int i, int j) {
 ////
 // Update functions
 
+void update_setingup() {
+
+    if (riv->frame % 15 == 0) {
+        for (int y=0;y<MAP_SIZE;++y) for (int x=0;x<MAP_SIZE;++x) map[x][y] = 0;
+        int count = 0;
+        while (count < START_SCREEN_CELLS) {
+            riv_vec2i new_cell = (riv_vec2i){riv_rand_uint(MAP_SIZE-1), riv_rand_uint(MAP_SIZE-1)};
+            if (map[new_cell.x][new_cell.y] == 0) {
+                map[new_cell.x][new_cell.y] = 2;
+                count++;
+            }
+        }
+    }
+}
+
 void start_setup() {
     cursor_map_pos = (riv_vec2i){(cursor_pos.x + TILE_SIZE/2) / TILE_SIZE, (cursor_pos.y + TILE_SIZE/2) / TILE_SIZE};
     setingup = true;
@@ -213,6 +226,7 @@ void start_setup() {
     polimino_unset = false;
     riv_waveform(&start_sfx);
 
+    for (int y=0;y<MAP_SIZE;++y) for (int x=0;x<MAP_SIZE;++x) map[x][y] = 0;
     int count = 0;
     while (count < starting_cells) {
         riv_vec2i new_cell = (riv_vec2i){riv_rand_uint(MAP_SIZE-1), riv_rand_uint(MAP_SIZE-1)};
@@ -341,17 +355,24 @@ void update_setup() {
         } else {
             for (int i=0; i<POLIMINOS_POINTS; i++) {
                 if (poliminos[polimino_selected][i][0] == -1 || poliminos[polimino_selected][i][1] == -1) continue;
-                int x = clamp(cursor_map_pos.x + mirrors[polimino_mirror_index][0] * poliminos[polimino_selected][i][0], 0, SCREEN_SIZE-TILE_SIZE);
-                int y = clamp(cursor_map_pos.y + mirrors[polimino_mirror_index][1] * poliminos[polimino_selected][i][1], 0, SCREEN_SIZE-TILE_SIZE);
+                int x = !rotations[polimino_mirror_index] ? 
+                    clamp(cursor_map_pos.x + mirrors[polimino_mirror_index][0] * poliminos[polimino_selected][i][0], 0, SCREEN_SIZE-TILE_SIZE) : 
+                    clamp(cursor_map_pos.x + mirrors[polimino_mirror_index][0] * poliminos[polimino_selected][i][1], 0, SCREEN_SIZE-TILE_SIZE);
+                int y = !rotations[polimino_mirror_index] ? 
+                    clamp(cursor_map_pos.y + mirrors[polimino_mirror_index][1] * poliminos[polimino_selected][i][1], 0, SCREEN_SIZE-TILE_SIZE) :
+                    clamp(cursor_map_pos.y + mirrors[polimino_mirror_index][1] * poliminos[polimino_selected][i][0], 0, SCREEN_SIZE-TILE_SIZE);
                 if (map[x][y] != 2) {
                     if (polimino_unset) {
-                        riv_waveform(&multiset_sfx);
                         map[x][y] = 0;
                     } else {
-                        riv_waveform(&multiunset_sfx);
                         map[x][y] = 1;
                     }
                 }
+            }
+            if (polimino_unset) {
+                riv_waveform(&multiset_sfx);
+            } else {
+                riv_waveform(&multiunset_sfx);
             }
             polimino_unset = !polimino_unset;
         }
@@ -477,8 +498,12 @@ void draw_setup() {
     if (polimino_selected > -1) {
         for (int i=0; i<POLIMINOS_POINTS; i++) {
             if (poliminos[polimino_selected][i][0] == -1 || poliminos[polimino_selected][i][1] == -1) continue;
-            int x = clamp(cursor_map_pos.x + mirrors[polimino_mirror_index][0] * poliminos[polimino_selected][i][0], 0, SCREEN_SIZE-TILE_SIZE);
-            int y = clamp(cursor_map_pos.y + mirrors[polimino_mirror_index][1] * poliminos[polimino_selected][i][1], 0, SCREEN_SIZE-TILE_SIZE);
+                int x = !rotations[polimino_mirror_index] ? 
+                    clamp(cursor_map_pos.x + mirrors[polimino_mirror_index][0] * poliminos[polimino_selected][i][0], 0, SCREEN_SIZE-TILE_SIZE) : 
+                    clamp(cursor_map_pos.x + mirrors[polimino_mirror_index][0] * poliminos[polimino_selected][i][1], 0, SCREEN_SIZE-TILE_SIZE);
+                int y = !rotations[polimino_mirror_index] ? 
+                    clamp(cursor_map_pos.y + mirrors[polimino_mirror_index][1] * poliminos[polimino_selected][i][1], 0, SCREEN_SIZE-TILE_SIZE) :
+                    clamp(cursor_map_pos.y + mirrors[polimino_mirror_index][1] * poliminos[polimino_selected][i][0], 0, SCREEN_SIZE-TILE_SIZE);
             riv_draw_rect_line(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE, RIV_COLOR_LIGHTGREY);
         }
     }
@@ -541,6 +566,12 @@ void draw_game() {
 void draw_start_screen() {
     // Clear screen
     riv_clear(RIV_COLOR_DARKSLATE);
+
+    // draw cells
+    for (int y=0;y<MAP_SIZE;++y) for (int x=0;x<MAP_SIZE;++x) 
+        if (map[x][y]) riv_draw_rect_fill(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE, RIV_COLOR_DARKERGREEN);
+
+
     // Draw snake title
     riv_draw_text("Life is Hard", RIV_SPRITESHEET_FONT_5X7, RIV_CENTER, 128, 128, 2, RIV_COLOR_DARKPINK);
 
@@ -578,6 +609,8 @@ void draw_end_screen() {
 // Called every frame to update game state
 void update() {
     if (!setingup) { // Game not started yet
+        // update animation
+        update_setingup();
         // Let enter setup phase whenever a key has been pressed
         if (riv->key_toggle_count > 0) {
             start_setup();

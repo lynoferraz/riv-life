@@ -33,4 +33,4 @@ Game controls:
 | -efficiency | float | 1 | Rate of LP consumed by alive cells (rounded up) |
 | -setup-time | int | 60 | Time to set up life board |
 | -show-stats | bool | 1 | Display/Hide stats during simulation |
-| -updates-sec | int | 1 | Number of seconds to do updates (divided by level) |
+| -updates-sec | int | 2 | Number of seconds to do updates (divided by level) |
