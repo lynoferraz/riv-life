@@ -19,6 +19,7 @@ Game controls:
 | Argument | Type | Default Value | Description |
 | - | - | - | - |
 | -life-points | int | 20000 | Starting LP, to be consumed |
+| -bonus-remaining-time | int | 0 | Bonus multiplier for remaining setup time |
 | -birth-bonus | int | 1 | LP bonus for each new cell |
 | -moving-bonus | int | 4 | LP bonus for new cell that was blank since 2 generations before |
 | -starting-alive-bonus | int | 0 | Score bonus for each one of the remaining starting cells |

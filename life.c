@@ -70,6 +70,7 @@ int polimino_mirror_index = 0;
 bool polimino_unset = false;
 
 uint64_t mark_frame;
+uint64_t last_update_frame;
 uint64_t last_sound_frame;
 int level = 1;
 int deaths = 0;
@@ -95,6 +96,7 @@ int setup_time = 60;
 bool show_stats = 1;
 float efficiency = 1.0;
 int updates_sec = 1;
+int bonus_remaining_time = 0;
 
 
 int64_t clamp(int64_t v, int64_t min, int64_t max) { v = v < min ? min : v; v = v > max ? max : v; return v; }
@@ -111,7 +113,7 @@ riv_waveform_desc start_sfx = {
 };
 riv_waveform_desc end_sfx = {
     .type = RIV_WAVEFORM_PULSE,
-    .attack = 0.01f, .decay = 0.01f, .sustain = 0.1f, .release = 0.01f,
+    .attack = 0.01f, .decay = 0.05f, .sustain = 0.2f, .release = 0.01f,
     .start_frequency = RIV_NOTE_A3, .end_frequency = RIV_NOTE_A2,
     .amplitude = 0.5f, .sustain_level = 0.5f,
 };
@@ -237,6 +239,7 @@ void start_game() {
         if (map[i][j] == 2) starting_alive++;
     }
     life_points -= current_alive;
+    life_points += ((riv->frame - mark_frame)/riv->target_fps > setup_time ) ? 0 : bonus_remaining_time * (setup_time - (riv->frame - mark_frame)/riv->target_fps );
     riv_waveform_desc start_waveform = *(&ready_sfx);
     start_waveform.sustain = 0.25f;
     riv_waveform(&start_waveform);
@@ -247,6 +250,7 @@ void start_game() {
 void game_starting() {
     if (riv->frame - mark_frame > STARTING_FRAMES) {
         mark_frame = riv->frame;
+        last_update_frame = riv->frame;
         started = true;
     }
 }
@@ -307,7 +311,6 @@ void update_setup() {
     if (riv->keys[RIV_GAMEPAD_A2].press) {
         polimino_selected = polimino_selected < N_POLIMINOS - 1 ? polimino_selected + 1 : 0;
         last_polimino_selected = polimino_selected;
-        riv_printf("polimino selected %i\n",polimino_selected);
     };
 
     // mirror polimino
@@ -366,10 +369,12 @@ void update_game() {
     int a;
 
     uint64_t rel_frame = riv->frame - mark_frame;
+    uint64_t up_frame = riv->frame - last_update_frame;
 
-    bool update_state = ((updates_sec*(rel_frame % riv->target_fps)) % clamp(N_LEVELS_SYSTEM - level,1,N_LEVELS_SYSTEM) == 0);
+    bool update_state = ((up_frame)) % (updates_sec*clamp(N_LEVELS_SYSTEM - level + 1,1,N_LEVELS_SYSTEM)) == 0;
 
     if (update_state) {
+        last_update_frame = riv->frame;
         generations++;
         for (int i=0; i<MAP_SIZE; i++) for (int j=0; j<MAP_SIZE; j++) {
             a = adjacencies (i, j);
@@ -415,28 +420,27 @@ void update_game() {
         waveform.start_frequency = waveform.start_frequency * rel_note_level[note];
         waveform.end_frequency = waveform.end_frequency * rel_note_level[note];
         riv_waveform(&waveform);
-    }
+    
+        score += level * current_alive + starting_alive * starting_alive_bonus;
 
-
-    score += level * current_alive + starting_alive * starting_alive_bonus;
-
-    // riv_printf("level up %f,\n",(float)score/(float)level_increase);
-    // update level
-    if ((float)score/level_increase >= (float)level) {
-        riv_waveform_desc level_waveform = *(&level_sfx);
-        int level_note = clamp(level-1,0,N_LEVELS_SYSTEM-1);
-        level_waveform.start_frequency = level_waveform.start_frequency * rel_note_level[level_note];
-        level_waveform.end_frequency = level_waveform.end_frequency * rel_note_level[level_note];
-        if (riv->frame - last_sound_frame > MIN_FRAME_SOUND_LEVEL) {
-            riv_waveform(&level_waveform);
-            last_sound_frame = riv->frame;
+        // riv_printf("level up %f,\n",(float)score/(float)level_increase);
+        // update level
+        if ((float)score/level_increase >= (float)level) {
+            riv_waveform_desc level_waveform = *(&level_sfx);
+            int level_note = clamp(level-1,0,N_LEVELS_SYSTEM-1);
+            level_waveform.start_frequency = level_waveform.start_frequency * rel_note_level[level_note];
+            level_waveform.end_frequency = level_waveform.end_frequency * rel_note_level[level_note];
+            if (riv->frame - last_sound_frame > MIN_FRAME_SOUND_LEVEL) {
+                riv_waveform(&level_waveform);
+                last_sound_frame = riv->frame;
+            }
+            level_increase *= level_increase_factor;
+            level++;
         }
-        level_increase *= level_increase_factor;
-        level++;
     }
 
     riv->outcard_len = riv_snprintf((char*)riv->outcard, RIV_SIZE_OUTCARD, 
-        "JSON{\"score\":%d,\"current_alive\":%d,\"births\":%d,\"deaths\":%d,\"level\":%d,\"frame\":%d,\"starting_alive\":%d,\"generations\":%d,\"lifes_lvl_1\":%d,\"lifes_lvl_2\":%d,\"lifes_lvl_3\":%d,\"lifes_lvl_4\":%d,\"lifes_lvl_5\":%d,\"lifes_lvl_6\":%d,\"lifes_lvl_7\":%d,\"lifes_lvl_8\":%d,\"lifes_lvl_9\":%d,\"lifes_lvl_10\":%d,\"lifes_lvl_11\":%d,\"lifes_lvl_12\":%d}", 
+        "JSON{\"score\":%d,\"current_alive\":%d,\"births\":%d,\"deaths\":%d,\"level\":%d,\"frames\":%d,\"starting_alive\":%d,\"generations\":%d,\"lifes_lvl_1\":%d,\"lifes_lvl_2\":%d,\"lifes_lvl_3\":%d,\"lifes_lvl_4\":%d,\"lifes_lvl_5\":%d,\"lifes_lvl_6\":%d,\"lifes_lvl_7\":%d,\"lifes_lvl_8\":%d,\"lifes_lvl_9\":%d,\"lifes_lvl_10\":%d,\"lifes_lvl_11\":%d,\"lifes_lvl_12\":%d}", 
         score, current_alive, births, deaths, level, rel_frame, starting_alive, generations, 
             lifes_lvl[0],lifes_lvl[1],lifes_lvl[2],lifes_lvl[3],lifes_lvl[4],lifes_lvl[5],lifes_lvl[6],lifes_lvl[7],lifes_lvl[8],lifes_lvl[9],lifes_lvl[10],lifes_lvl[11]);
 
@@ -640,6 +644,8 @@ int main(int argc, char* argv[]) {
                 starting_cells = atoi(argv[i+1]);
             } else if (strcmp(argv[i], "-setup-time") == 0) {
                 setup_time = atoi(argv[i+1]);
+            } else if (strcmp(argv[i], "-bonus-remaining-time") == 0) {
+                bonus_remaining_time = atoi(argv[i+1]);
             } else if (strcmp(argv[i], "-show-stats") == 0) {
                 show_stats = atoi(argv[i+1]);
             } else if (strcmp(argv[i], "-starting-alive-bonus") == 0) {
