@@ -1,7 +1,7 @@
 {
     "name": "Life is Hard",
     "summary": "A Conway's Game of Life-based puzzle, that you set up life and watch it evolve",
-    "description": "How many and for how long life can survive?\nSet up Conway's Game of Life patterns and let it roll!\nThe Life Points (LP) are spent to keep cells alive. But too few and stale cells are boring, so they consume LP faster.\nLeveling up increase score income, but it also consumes more LP.\nBirth award bonus, while deaths...\nAnd those pesky blue cells? They are just part of life, you'll have to live with them.\nGame controls:\n- Press ARROWS to move the cursor and keep it pressed to move faster.\n- Press Z/A1 to set/unset cell.\n- Keep X/A2 pressed to start simulation.",
+    "description": "How many and for how long life can survive?\nSet up Conway's Game of Life patterns and let it roll!\nThe Life Points (LP) are spent to keep cells alive. But too few and stale cells are boring, so they consume LP faster.\nLeveling up increase score income, but it also consumes more LP.\nBirth award bonus, while deaths...\nAnd those pesky blue cells? They are just part of life, you'll have to live with them.\nGame controls:\n- Press ARROWS to move the cursor and keep it pressed to move faster.\n- Press Z/A1 to set/unset cell.\n- Press X/A2 activate/deactivate poliminos.\n- Press C/A3 to cycle between the poliminos.\n- Press S/L1 and D/R1 mirror the poliminos.\n- Keep E/START pressed to start simulation.",
     "status": "prototype",
     "tags": ["puzzle", "2d", "pixel art"],
     "authors": [{

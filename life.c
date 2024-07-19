@@ -14,8 +14,8 @@ enum {
   MAP_SIZE = 64,
   TILE_SIZE = 4,
   DIR_KEY_FRAMES = 4,
-  KEY_SET_FRAMES = 5,
-  A2_SET_FRAMES_START = 240,
+  KEY_SET_FRAMES = 10,
+  START_SET_FRAMES_START = 240,
   N_LEVELS_SYSTEM = 12,
   LEVEL_UP_ANIMATION_FRAMES = 6,
   MIN_FRAME_SOUND_LEVEL = 6,
@@ -23,24 +23,51 @@ enum {
   SPEED2 = 8,
   STARTING_FRAMES = 30,
   SETINGUP_FRAMES = 30,
+  N_POLIMINOS = 14,
+  N_MIRRORS = 4,
+  POLIMINOS_POINTS = 4,
 };
 
 static uint32_t level_colors[] = {19,18,17,16,15,27,28,29,23,24,25,26};
 
+static int previous_map[MAP_SIZE][MAP_SIZE];
 static int map[MAP_SIZE][MAP_SIZE];
 static int next_map[MAP_SIZE][MAP_SIZE];
 static riv_vec2i cursor_pos = {(SCREEN_SIZE-TILE_SIZE)/2, (SCREEN_SIZE-TILE_SIZE)/2};
 static int64_t cursor_speed = SPEED1;
 riv_vec2i cursor_map_pos;
 
+// up to tetromino
+static int poliminos[N_POLIMINOS][POLIMINOS_POINTS][2] = {
+    {{0,0},{0,1},{-1,-1},{-1,-1}}, // domino
+    {{0,0},{1,0},{-1,-1},{-1,-1}}, // domino b
+    {{0,0},{0,1},{0,2},{-1,-1}}, // tromino 1
+    {{0,0},{1,0},{2,0},{-1,-1}}, // tromino 1b
+    {{0,0},{0,1},{1,0},{-1,-1}}, // tromino 2
+    {{0,0},{0,1},{0,2},{0,3}}, // tetromino 1
+    {{0,0},{1,0},{2,0},{3,0}}, // tetromino 1b
+    {{0,0},{0,1},{1,0},{1,1}}, // tetromino 2
+    {{0,0},{0,1},{0,2},{1,2}}, // tetromino 3
+    {{0,0},{0,1},{1,0},{2,0}}, // tetromino 3b
+    {{0,0},{1,0},{1,1},{2,1}}, // tetromino 4
+    {{0,0},{0,1},{1,1},{1,2}}, // tetromino 4b
+    {{0,0},{0,1},{0,2},{1,1}}, // tetromino 5
+    {{0,0},{1,0},{2,0},{1,1}}, // tetromino 5b
+};
+static int mirrors[4][2] = {{1,1},{1,-1},{-1,-1},{-1,1}};
+
 int u_press = 0;
 int d_press = 0;
 int l_press = 0;
 int r_press = 0;
 int a1_press = 0;
-int a2_press = 0;
-uint64_t a2_press_frame;
+int start_press = 0;
+uint64_t start_press_frame;
 int level_up_animation = 0;
+int polimino_selected = -1;
+int last_polimino_selected = 0;
+int polimino_mirror_index = 0;
+bool polimino_unset = false;
 
 uint64_t mark_frame;
 uint64_t last_sound_frame;
@@ -50,20 +77,24 @@ int births = 0;
 int current_alive = 0;
 int starting_alive = 0;
 int score = 0;
+int generations = 0;
+int lifes_lvl[N_LEVELS_SYSTEM] = {0,0,0,0,0,0,0,0,0,0,0,0};
 
-int life_points = 10000;
+int life_points = 20000;
 float level_increase = 500;
 float level_increase_factor = 2;
 int birth_bonus = 1;
 int starting_alive_bonus = 0;
 int death_penalty = 0;
 int stale_penalty = 3;
+int moving_bonus = 4;
 int boring_penalty = 100;
 int boring_threshold = 20;
 int starting_cells = 30;
-int setup_time = 30;
+int setup_time = 60;
 bool show_stats = 1;
 float efficiency = 1.0;
+int updates_sec = 1;
 
 
 int64_t clamp(int64_t v, int64_t min, int64_t max) { v = v < min ? min : v; v = v > max ? max : v; return v; }
@@ -97,6 +128,18 @@ riv_waveform_desc unset_sfx = {
     .amplitude = 0.25f, .sustain_level = 0.5f,
 };
 
+riv_waveform_desc multiset_sfx = {
+    .type = RIV_WAVEFORM_PULSE,
+    .attack = 0.01f, .decay = 0.03f, .sustain = 0.3f, .release = 0.01f,
+    .start_frequency = RIV_NOTE_A4, .end_frequency = RIV_NOTE_C4,
+    .amplitude = 0.25f, .sustain_level = 0.5f,
+};
+riv_waveform_desc multiunset_sfx = {
+    .type = RIV_WAVEFORM_PULSE,
+    .attack = 0.01f, .decay = 0.03f, .sustain = 0.3f, .release = 0.01f,
+    .start_frequency = RIV_NOTE_C4, .end_frequency = RIV_NOTE_A4,
+    .amplitude = 0.25f, .sustain_level = 0.5f,
+};
 riv_waveform_desc ready_sfx = {
     .type = RIV_WAVEFORM_PULSE,
     .attack = 0.00f, .decay = 0.25f, .sustain = 0.0f, .release = 0.25f,
@@ -162,6 +205,10 @@ int adjacencies (int i, int j) {
 void start_setup() {
     cursor_map_pos = (riv_vec2i){(cursor_pos.x + TILE_SIZE/2) / TILE_SIZE, (cursor_pos.y + TILE_SIZE/2) / TILE_SIZE};
     setingup = true;
+    last_polimino_selected = 0;
+    polimino_selected = -1;
+    polimino_mirror_index = 0;
+    polimino_unset = false;
     riv_waveform(&start_sfx);
 
     int count = 0;
@@ -223,6 +270,7 @@ void update_setup() {
     if (riv->keys[RIV_GAMEPAD_RIGHT].down) r_press++; else r_press = 0;
     if (r_press%DIR_KEY_FRAMES == 1) {
         cursor_pos.x += cursor_speed;
+        polimino_unset = false;
     } else if (r_press == 4*DIR_KEY_FRAMES) {
         cursor_speed = SPEED2;
     }
@@ -230,6 +278,7 @@ void update_setup() {
     if (riv->keys[RIV_GAMEPAD_LEFT].down) l_press++; else l_press = 0;
     if (l_press%DIR_KEY_FRAMES == 1) {
         cursor_pos.x -= cursor_speed;
+        polimino_unset = false;
     } else if (l_press == 4*DIR_KEY_FRAMES) {
         cursor_speed = SPEED2;
     }
@@ -237,6 +286,7 @@ void update_setup() {
     if (riv->keys[RIV_GAMEPAD_DOWN].down) d_press++; else d_press = 0;
     if (d_press%DIR_KEY_FRAMES == 1) {
         cursor_pos.y += cursor_speed;
+        polimino_unset = false;
     } else if (d_press == 4*DIR_KEY_FRAMES) {
         cursor_speed = SPEED2;
     }
@@ -244,10 +294,29 @@ void update_setup() {
     if (riv->keys[RIV_GAMEPAD_UP].down) u_press++; else u_press = 0;
     if (u_press%DIR_KEY_FRAMES == 1) {
         cursor_pos.y -= cursor_speed;
+        polimino_unset = false;
     } else if (u_press == 4*DIR_KEY_FRAMES) {
         cursor_speed = SPEED2;
     }
 
+    // activate poliminos
+    if (riv->keys[RIV_GAMEPAD_A3].press) {
+        polimino_selected = polimino_selected > -1 ? -1 : last_polimino_selected;
+    };
+    // cicle poliminos
+    if (riv->keys[RIV_GAMEPAD_A2].press) {
+        polimino_selected = polimino_selected < N_POLIMINOS - 1 ? polimino_selected + 1 : 0;
+        last_polimino_selected = polimino_selected;
+        riv_printf("polimino selected %i\n",polimino_selected);
+    };
+
+    // mirror polimino
+    if (riv->keys[RIV_GAMEPAD_L1].press) {
+        polimino_mirror_index = polimino_mirror_index > 0 ? polimino_mirror_index - 1 : N_MIRRORS - 1;
+    };
+    if (riv->keys[RIV_GAMEPAD_R1].press) {
+        polimino_mirror_index = polimino_mirror_index < N_MIRRORS - 1 ? polimino_mirror_index + 1 : 0;
+    };
 
     cursor_pos.x = clamp(cursor_pos.x, 0, SCREEN_SIZE-TILE_SIZE);
     cursor_pos.y = clamp(cursor_pos.y, 0, SCREEN_SIZE-TILE_SIZE);
@@ -255,22 +324,40 @@ void update_setup() {
     cursor_map_pos = (riv_vec2i){(cursor_pos.x + TILE_SIZE/2) / TILE_SIZE, (cursor_pos.y + TILE_SIZE/2) / TILE_SIZE};
 
     if (riv->keys[RIV_GAMEPAD_A1].down) a1_press++; else a1_press = 0;
-    if (riv->keys[RIV_GAMEPAD_A2].down || (riv->frame - mark_frame)/riv->target_fps > setup_time ) a2_press++; else a2_press = 0;
+    if (riv->keys[RIV_GAMEPAD_START].down || (riv->frame - mark_frame)/riv->target_fps > setup_time ) start_press++; else start_press = 0;
 
     if (a1_press == 1) {
-        if (map[cursor_map_pos.x][cursor_map_pos.y] == 2) { // can't change starting
-            riv_waveform(&end_sfx);
+        if (polimino_selected == -1) {
+            if (map[cursor_map_pos.x][cursor_map_pos.y] == 2) { // can't change starting
+                riv_waveform(&end_sfx);
+            } else {
+                if (map[cursor_map_pos.x][cursor_map_pos.y]) riv_waveform(&set_sfx);
+                else riv_waveform(&unset_sfx);
+                map[cursor_map_pos.x][cursor_map_pos.y] = !map[cursor_map_pos.x][cursor_map_pos.y];
+            }
         } else {
-            if (map[cursor_map_pos.x][cursor_map_pos.y]) riv_waveform(&set_sfx);
-            else riv_waveform(&unset_sfx);
-            map[cursor_map_pos.x][cursor_map_pos.y] = !map[cursor_map_pos.x][cursor_map_pos.y];
+            for (int i=0; i<POLIMINOS_POINTS; i++) {
+                if (poliminos[polimino_selected][i][0] == -1 || poliminos[polimino_selected][i][1] == -1) continue;
+                int x = clamp(cursor_map_pos.x + mirrors[polimino_mirror_index][0] * poliminos[polimino_selected][i][0], 0, SCREEN_SIZE-TILE_SIZE);
+                int y = clamp(cursor_map_pos.y + mirrors[polimino_mirror_index][1] * poliminos[polimino_selected][i][1], 0, SCREEN_SIZE-TILE_SIZE);
+                if (map[x][y] != 2) {
+                    if (polimino_unset) {
+                        riv_waveform(&multiset_sfx);
+                        map[x][y] = 0;
+                    } else {
+                        riv_waveform(&multiunset_sfx);
+                        map[x][y] = 1;
+                    }
+                }
+            }
+            polimino_unset = !polimino_unset;
         }
     } else if (d_press == KEY_SET_FRAMES) a1_press = 0;
-    if (a2_press == 1) {
-        a2_press_frame = riv->frame;
-    } else if (a2_press == riv->target_fps || a2_press == 2*riv->target_fps || a2_press == 3*riv->target_fps) {
+    if (start_press == 1) {
+        start_press_frame = riv->frame;
+    } else if (start_press == riv->target_fps || start_press == 2*riv->target_fps || start_press == 3*riv->target_fps) {
         riv_waveform(&ready_sfx);
-    } else if (a2_press >= A2_SET_FRAMES_START) {
+    } else if (start_press >= START_SET_FRAMES_START) {
         start_game();
     }
 }
@@ -280,9 +367,10 @@ void update_game() {
 
     uint64_t rel_frame = riv->frame - mark_frame;
 
-    bool update_state = ((rel_frame % riv->target_fps) % clamp(N_LEVELS_SYSTEM - level,1,N_LEVELS_SYSTEM) == 0);
+    bool update_state = ((updates_sec*(rel_frame % riv->target_fps)) % clamp(N_LEVELS_SYSTEM - level,1,N_LEVELS_SYSTEM) == 0);
 
     if (update_state) {
+        generations++;
         for (int i=0; i<MAP_SIZE; i++) for (int j=0; j<MAP_SIZE; j++) {
             a = adjacencies (i, j);
             if (a == 2) next_map[i][j] = map[i][j];
@@ -302,10 +390,14 @@ void update_game() {
                 births++;
                 life_points += birth_bonus;
             }
+            if (!previous_map[i][j] && !map[i][j] && next_map[i][j]) {
+                life_points += moving_bonus;
+            }
         }
         current_alive = 0;
         starting_alive = 0;
         for (int i=0; i<MAP_SIZE; i++) for (int j=0; j<MAP_SIZE; j++) {
+            previous_map[i][j] = map[i][j];
             map[i][j] = next_map[i][j];
             if (map[i][j]) current_alive++;
             if (map[i][j] == 2) starting_alive++;
@@ -315,6 +407,8 @@ void update_game() {
         if (boring_threshold > 0) {
             life_points -= current_alive < boring_threshold ? boring_penalty * level: 0;
         }
+
+        lifes_lvl[level-1] += current_alive;
 
         riv_waveform_desc waveform = *(&update_sfx);
         int note = clamp(level-1,0,N_LEVELS_SYSTEM-1);
@@ -342,8 +436,9 @@ void update_game() {
     }
 
     riv->outcard_len = riv_snprintf((char*)riv->outcard, RIV_SIZE_OUTCARD, 
-        "JSON{\"score\":%d,\"current_alive\":%d,\"births\":%d,\"deaths\":%d,\"level\":%d,\"frame\":%d,\"starting_alive\":%d}", 
-        score, current_alive, births, deaths, level, rel_frame, starting_alive);
+        "JSON{\"score\":%d,\"current_alive\":%d,\"births\":%d,\"deaths\":%d,\"level\":%d,\"frame\":%d,\"starting_alive\":%d,\"generations\":%d,\"lifes_lvl_1\":%d,\"lifes_lvl_2\":%d,\"lifes_lvl_3\":%d,\"lifes_lvl_4\":%d,\"lifes_lvl_5\":%d,\"lifes_lvl_6\":%d,\"lifes_lvl_7\":%d,\"lifes_lvl_8\":%d,\"lifes_lvl_9\":%d,\"lifes_lvl_10\":%d,\"lifes_lvl_11\":%d,\"lifes_lvl_12\":%d}", 
+        score, current_alive, births, deaths, level, rel_frame, starting_alive, generations, 
+            lifes_lvl[0],lifes_lvl[1],lifes_lvl[2],lifes_lvl[3],lifes_lvl[4],lifes_lvl[5],lifes_lvl[6],lifes_lvl[7],lifes_lvl[8],lifes_lvl[9],lifes_lvl[10],lifes_lvl[11]);
 
     if (current_alive == 0 || life_points < 1) {
         end_game();
@@ -373,26 +468,37 @@ void draw_setup() {
             } 
         }
     }
+
+    // draw polimino
+    if (polimino_selected > -1) {
+        for (int i=0; i<POLIMINOS_POINTS; i++) {
+            if (poliminos[polimino_selected][i][0] == -1 || poliminos[polimino_selected][i][1] == -1) continue;
+            int x = clamp(cursor_map_pos.x + mirrors[polimino_mirror_index][0] * poliminos[polimino_selected][i][0], 0, SCREEN_SIZE-TILE_SIZE);
+            int y = clamp(cursor_map_pos.y + mirrors[polimino_mirror_index][1] * poliminos[polimino_selected][i][1], 0, SCREEN_SIZE-TILE_SIZE);
+            riv_draw_rect_line(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE, RIV_COLOR_LIGHTGREY);
+        }
+    }
+
     // draw cursor
     uint32_t col = (riv->frame % 15 > 7) ? RIV_COLOR_LIGHTGREY : RIV_COLOR_GREY;
     riv_draw_rect_line(cursor_map_pos.x*TILE_SIZE, cursor_map_pos.y*TILE_SIZE, TILE_SIZE, TILE_SIZE, col);
     // draw text
-    if (a2_press < riv->target_fps/4){
+    if (start_press < riv->target_fps/4){
         riv_draw_text("Setup Life", RIV_SPRITESHEET_FONT_5X7, RIV_CENTER, 128, 10, 1, RIV_COLOR_WHITE);
 
         char buf[128];
         int remaing_time = setup_time-(riv->frame-mark_frame)/riv->target_fps;
         riv_snprintf(buf, sizeof(buf), "%d", remaing_time > 0 ? remaing_time : 0);
         riv_draw_text(buf, RIV_SPRITESHEET_FONT_5X7, RIV_LEFT, 10, 240, 1, RIV_COLOR_WHITE);
-    } else if (a2_press < riv->target_fps) {
-    } else if (a2_press < 2*riv->target_fps) {
-        int64_t size = (2*riv->target_fps - a2_press) / 12 + 2;
+    } else if (start_press < riv->target_fps) {
+    } else if (start_press < 2*riv->target_fps) {
+        int64_t size = (2*riv->target_fps - start_press) / 12 + 2;
         riv_draw_text("3", RIV_SPRITESHEET_FONT_5X7, RIV_CENTER, 128, 128, size, RIV_COLOR_WHITE);
-    } else if (a2_press < 3*riv->target_fps) {
-        int64_t size = (3*riv->target_fps - a2_press) / 12 + 2;
+    } else if (start_press < 3*riv->target_fps) {
+        int64_t size = (3*riv->target_fps - start_press) / 12 + 2;
         riv_draw_text("2", RIV_SPRITESHEET_FONT_5X7, RIV_CENTER, 128, 128, size, RIV_COLOR_WHITE);
-    } else if (a2_press < 4*riv->target_fps) {
-        int64_t size = (4*riv->target_fps - a2_press) / 12 + 2;
+    } else if (start_press < 4*riv->target_fps) {
+        int64_t size = (4*riv->target_fps - start_press) / 12 + 2;
         riv_draw_text("1", RIV_SPRITESHEET_FONT_5X7, RIV_CENTER, 128, 128, size, RIV_COLOR_WHITE);
     }
 
@@ -524,6 +630,8 @@ int main(int argc, char* argv[]) {
                 // riv_printf("stopped '%s' scan at '%s'\n",argv[i+1], endstr);
             } else if (strcmp(argv[i], "-birth-bonus") == 0) {
                 birth_bonus = atoi(argv[i+1]);
+            } else if (strcmp(argv[i], "-moving-bonus") == 0) {
+                moving_bonus = atoi(argv[i+1]);
             } else if (strcmp(argv[i], "-death-penalty") == 0) {
                 death_penalty = atoi(argv[i+1]);
             } else if (strcmp(argv[i], "-boring-penalty") == 0) {
@@ -536,6 +644,8 @@ int main(int argc, char* argv[]) {
                 show_stats = atoi(argv[i+1]);
             } else if (strcmp(argv[i], "-starting-alive-bonus") == 0) {
                 starting_alive_bonus = atoi(argv[i+1]);
+            } else if (strcmp(argv[i], "-updates-sec") == 0) {
+                updates_sec = atoi(argv[i+1]);
             } else if (strcmp(argv[i], "-efficiency") == 0) {
                 char *endstr;
                 efficiency = strtof(argv[i+1], &endstr);

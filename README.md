@@ -18,16 +18,18 @@ Game controls:
 
 | Argument | Type | Default Value | Description |
 | - | - | - | - |
-| -life-points | int | 10000 | Starting LP, to be consumed |
-| -birth-bonus | int | 1 | Score bonus for each new cell |
+| -life-points | int | 20000 | Starting LP, to be consumed |
+| -birth-bonus | int | 1 | LP bonus for each new cell |
+| -moving-bonus | int | 4 | LP bonus for new cell that was blank since 2 generations before |
 | -starting-alive-bonus | int | 0 | Score bonus for each one of the remaining starting cells |
-| -death-penalty | int | 0 | Score penalty for each cell that dies |
-| -stale-penalty | int | 3 | Score penalty for each new cell that stayed alive |
+| -death-penalty | int | 0 | LP penalty for each cell that dies |
+| -stale-penalty | int | 3 | LP penalty for each new cell that stayed alive |
 | -boring-threshold | int | 20 | Minimum number of cells to avoid boring penalty |
-| -boring-penalty | int | 100 | Penalty for having less than boring-threshold |
+| -boring-penalty | int | 100 | LP penalty for having less than boring-threshold |
 | -starting-cells | int | 30 | Number of starting unremovable cells |
 | -level-increase | float | 500 | Score/level to reach to upgrade level |
 | -level-increase-factor | float | 2 | Factor to multiply level-increase after upgrading level |
-| efficiency | float | 1 | Rate of LP consumed by alive cells (rounded up) |
-| -setup-time | int | 30 | Time to set up life board |
+| -efficiency | float | 1 | Rate of LP consumed by alive cells (rounded up) |
+| -setup-time | int | 60 | Time to set up life board |
 | -show-stats | bool | 1 | Display/Hide stats during simulation |
+| -updates-sec | int | 1 | Number of seconds to do updates (divided by level) |
